@@ -16,5 +16,6 @@
 
 pub mod party_i;
 
+pub mod mock;
 #[cfg(test)]
 mod test;
