@@ -56,7 +56,7 @@ fn main() {
     let data = fs::read_to_string("params.json")
         .expect("Unable to read params, make sure config file is present in the same folder ");
     let params: Params = serde_json::from_str(&data).unwrap();
-    let THRESHOLD = params.threshold.parse::<u16>().unwrap();
+    let THRESHOLD = params.threshold.parse::<u16>().unwrap() + 1;
 
     //signup:
     let (party_num_int, uuid) = match signup(&client).unwrap() {

@@ -75,7 +75,7 @@ fn signup_sign(db_mtx: State<RwLock<HashMap<Key, String>>>) -> Json<Result<Party
     let data = fs::read_to_string("params.json")
         .expect("Unable to read params, make sure config file is present in the same folder ");
     let params: Params = serde_json::from_str(&data).unwrap();
-    let threshold = params.threshold.parse::<u16>().unwrap();
+    let threshold = params.threshold.parse::<u16>().unwrap() + 1;
     let key = "signup-sign".to_string();
 
     let party_signup = {
