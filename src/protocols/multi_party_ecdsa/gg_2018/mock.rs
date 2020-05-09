@@ -19,23 +19,29 @@ pub fn keygen_t_n_parties(t: u16, n: u16) -> (Vec<Keys>, Vec<SharedKeys>, Vec<GE
         share_count: n,
     };
     let (t, n) = (t as usize, n as usize);
+
+    // select u
     let party_keys_vec = (0..n).map(Keys::create).collect::<Vec<Keys>>();
 
+    // compute committed
     let (bc1_vec, decom_vec): (Vec<_>, Vec<_>) = party_keys_vec
         .iter()
         .map(|k| k.phase1_broadcast_phase3_proof_of_correct_key())
         .unzip();
 
+    // public key of the partial private key.
     let y_vec = (0..n).map(|i| decom_vec[i].y_i).collect::<Vec<GE>>();
     let mut y_vec_iter = y_vec.iter();
     let head = y_vec_iter.next().unwrap();
     let tail = y_vec_iter;
+    // get real public key by sum.
     let y_sum = tail.fold(head.clone(), |acc, x| acc + x);
 
     let mut vss_scheme_vec = Vec::new();
     let mut secret_shares_vec = Vec::new();
     let mut index_vec = Vec::new();
 
+    // create Feldman-VSS
     let vss_result: Vec<_> = party_keys_vec
         .iter()
         .map(|k| {
@@ -54,6 +60,7 @@ pub fn keygen_t_n_parties(t: u16, n: u16) -> (Vec<Keys>, Vec<SharedKeys>, Vec<GE
 
     let vss_scheme_for_test = vss_scheme_vec.clone();
 
+    // Transpose matrix
     let party_shares = (0..n)
         .map(|i| {
             (0..n)
@@ -105,6 +112,8 @@ pub fn keygen_t_n_parties(t: u16, n: u16) -> (Vec<Keys>, Vec<SharedKeys>, Vec<GE
 
 pub fn sign(t: u16, n: u16, ttag: u16, s: Vec<usize>) {
     // full key gen emulation
+    // party_keys_vec: party private key
+    // shared_keys_vec:
     let (party_keys_vec, shared_keys_vec, _pk_vec, y, vss_scheme) = keygen_t_n_parties(t, n);
 
     let private_vec = (0..shared_keys_vec.len())
