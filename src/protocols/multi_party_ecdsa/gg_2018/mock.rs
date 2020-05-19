@@ -1,7 +1,4 @@
-use crate::protocols::multi_party_ecdsa::gg_2018::party_i::{
-    verify, Keys, LocalSignature, Parameters,
-    PartyPrivate, Phase5ADecom1, Phase5Com1, SharedKeys, SignKeys,
-};
+use crate::protocols::multi_party_ecdsa::gg_2018::party_i::{verify, Keys, LocalSignature, Parameters, PartyPrivate, Phase5ADecom1, Phase5Com1, SharedKeys, SignKeys, SignatureRecid};
 use crate::utilities::mta::{MessageA, MessageB};
 
 use curv::arithmetic::traits::Converter;
@@ -13,7 +10,7 @@ use curv::elliptic::curves::traits::*;
 use curv::{FE, GE};
 use paillier::*;
 
-pub fn keygen_t_n_parties(t: u16, n: u16) -> (Vec<Keys>, Vec<SharedKeys>, Vec<GE>, GE, VerifiableSS) {
+pub fn keygen_t_n_parties(t: u16, n: u16) -> (Vec<Keys>, Vec<SharedKeys>, Vec<GE>, GE, VerifiableSS, FE) {
     let parames = Parameters {
         threshold: t,
         share_count: n,
@@ -110,6 +107,7 @@ pub fn keygen_t_n_parties(t: u16, n: u16) -> (Vec<Keys>, Vec<SharedKeys>, Vec<GE
         pk_vec,
         y_sum,
         vss_scheme_for_test[0].clone(),
+        x,
     )
 }
 
@@ -120,18 +118,53 @@ pub fn sign(t: u16, n: u16, ttag: u16, s: Vec<usize>) {
     // _pk_vec : public key of vss
     // y:  real public key
     // vss_scheme: why single?
-    let (party_keys_vec, shared_keys_vec, _pk_vec, y, vss_scheme) = keygen_t_n_parties(t, n);
+    // x: real private key
+    let (party_keys_vec, shared_keys_vec, _pk_vec, y, vss_scheme, x) = keygen_t_n_parties(t, n);
 
-
-    let private_vec = (0..shared_keys_vec.len())
-        .map(|i| PartyPrivate::set_private(party_keys_vec[i].clone(), shared_keys_vec[i].clone()))
-        .collect::<Vec<PartyPrivate>>();
     // make sure that we have t<t'<n and the group s contains id's for t' parties
     // TODO: make sure s has unique id's and they are all in range 0..n
     // TODO: make sure this code can run when id's are not in ascending order
     assert!(ttag > t);
     let ttag = ttag as usize;
     assert_eq!(s.len(), ttag);
+
+    let message: [u8; 4] = [79, 77, 69, 82];
+    let message_bn = HSha256::create_hash(&[&BigInt::from(&message[..])]);
+
+    let (sig, local_sig_vec) = sign_impl(ttag, party_keys_vec, shared_keys_vec, y, vss_scheme, s, message_bn);
+
+    check_sig(&sig.r, &sig.s, &local_sig_vec[0].m, &y);
+    check_normal_sig(&x, &sig.r, &sig.s, &local_sig_vec[0].m, &y);
+}
+
+pub fn double_sign(t: u16, n: u16, ttag: u16, s: Vec<usize>) {
+    let (party_keys_vec, shared_keys_vec, _pk_vec, y, vss_scheme, x) = keygen_t_n_parties(t, n);
+
+    // make sure that we have t<t'<n and the group s contains id's for t' parties
+    // TODO: make sure s has unique id's and they are all in range 0..n
+    // TODO: make sure this code can run when id's are not in ascending order
+    assert!(ttag > t);
+    let ttag = ttag as usize;
+    assert_eq!(s.len(), ttag);
+
+    let message: [u8; 4] = [79, 77, 69, 82];
+    let message_bn = HSha256::create_hash(&[&BigInt::from(&message[..])]);
+
+    let (sig, local_sig_vec) = sign_impl(ttag, party_keys_vec.clone(), shared_keys_vec.clone(), y, vss_scheme.clone(), s.clone(), message_bn.clone());
+
+    check_sig(&sig.r, &sig.s, &local_sig_vec[0].m, &y);
+
+    let (sig2, local_sig_vec2) = sign_impl(ttag, party_keys_vec, shared_keys_vec, y, vss_scheme, s, message_bn);
+
+    check_sig(&sig2.r, &sig2.s, &local_sig_vec2[0].m, &y);
+
+    println!("sig1 : {:?} \n sig2: {:?}", sig, sig2);
+}
+
+fn sign_impl(ttag: usize, party_keys_vec: Vec<Keys>, shared_keys_vec: Vec<SharedKeys>, y: GE, vss_scheme: VerifiableSS, s: Vec<usize>, message_bn: BigInt) -> (SignatureRecid, Vec<LocalSignature>) {
+    let private_vec = (0..shared_keys_vec.len())
+        .map(|i| PartyPrivate::set_private(party_keys_vec[i].clone(), shared_keys_vec[i].clone()))
+        .collect::<Vec<PartyPrivate>>();
 
     // each party creates a signing key. This happens in parallel IRL. In this test we
     // create a vector of signing keys, one for each party.
@@ -264,8 +297,6 @@ pub fn sign(t: u16, n: u16, ttag: u16, s: Vec<usize>) {
         })
         .collect::<Vec<GE>>();
 
-    let message: [u8; 4] = [79, 77, 69, 82];
-    let message_bn = HSha256::create_hash(&[&BigInt::from(&message[..])]);
     let mut local_sig_vec = Vec::new();
 
     // each party computes s_i but don't send it yet. we start with phase5
@@ -337,7 +368,68 @@ pub fn sign(t: u16, n: u16, ttag: u16, s: Vec<usize>) {
 
     assert_eq!(local_sig_vec[0].y, y);
     verify(&sig, &local_sig_vec[0].y, &local_sig_vec[0].m).unwrap();
-    check_sig(&sig.r, &sig.s, &local_sig_vec[0].m, &y);
+
+    (sig, local_sig_vec)
+}
+
+fn check_normal_sig(x: &FE, r: &FE, s: &FE, msg: &BigInt, pk: &GE) {
+    use secp256k1::{verify, Message, SecretKey, PublicKey, PublicKeyFormat, Signature, sign};
+
+    let mut privkey_a = [0u8; 32];
+    for i in 0..32 {
+        privkey_a[i] = x.get_element()[i];
+    }
+
+    let raw_msg = BigInt::to_vec(&msg);
+    let mut msg: Vec<u8> = Vec::new(); // padding
+    msg.extend(vec![0u8; 32 - raw_msg.len()]);
+    msg.extend(raw_msg.iter());
+
+    let ctx_privkey = SecretKey::parse(&privkey_a).unwrap();
+    let ctx_message = Message::parse_slice(&raw_msg.as_slice()).unwrap();
+    let ctx_public = PublicKey::from_secret_key(&ctx_privkey);
+    println!("message: {:?} \n private key: {:?} \n public key: {:?}", ctx_message, ctx_privkey, ctx_public);
+
+    // check public key
+    let slice = pk.pk_to_key_slice();
+    let mut raw_pk = Vec::new();
+    if slice.len() != 65 {
+        // after curv's pk_to_key_slice return 65 bytes, this can be removed
+        raw_pk.insert(0, 4u8);
+        raw_pk.extend(vec![0u8; 64 - slice.len()]);
+        raw_pk.extend(slice);
+    } else {
+        raw_pk.extend(slice);
+    }
+    assert_eq!(raw_pk.len(), 65);
+    let pk = PublicKey::parse_slice(&raw_pk, Some(PublicKeyFormat::Full)).unwrap();
+    assert_eq!(pk, ctx_public);
+    println!("public check: \n 1:{:?} \n 2:{:?}", pk, ctx_public);
+
+    let (signature, id) = sign(&ctx_message, &ctx_privkey);
+    let reconstructed = Signature::parse_der(signature.serialize_der().as_ref()).unwrap();
+    let is_correct = verify(&ctx_message, &signature, &ctx_public);
+    println!("recover id: {:?}", id);
+    assert!(is_correct);
+
+    // convert tss signature to normal signature
+    let mut compact: Vec<u8> = Vec::new();
+    let bytes_r = &r.get_element()[..];
+    compact.extend(vec![0u8; 32 - bytes_r.len()]);
+    compact.extend(bytes_r.iter());
+
+    let bytes_s = &s.get_element()[..];
+    compact.extend(vec![0u8; 32 - bytes_s.len()]);
+    compact.extend(bytes_s.iter());
+
+    let secp_sig = Signature::parse_slice(compact.as_slice()).unwrap();
+    let is_correct = verify(&ctx_message, &secp_sig, &pk);
+    assert!(is_correct);
+
+    // recover???
+    assert_eq!(secp_sig.r, reconstructed.r);
+    // assert_eq!(secp_sig.s, reconstructed.s);
+
 }
 
 pub fn check_sig(r: &FE, s: &FE, msg: &BigInt, pk: &GE) {

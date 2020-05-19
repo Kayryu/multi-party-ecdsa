@@ -20,7 +20,7 @@ use crate::protocols::multi_party_ecdsa::gg_2018::party_i::{
     KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys
 };
 
-use crate::protocols::multi_party_ecdsa::gg_2018::mock::{keygen_t_n_parties, sign};
+use crate::protocols::multi_party_ecdsa::gg_2018::mock::{keygen_t_n_parties, sign, double_sign};
 
 #[test]
 fn test_keygen_t1_n2() {
@@ -50,6 +50,11 @@ fn test_sign_n8_t4_ttag6() {
 #[test]
 fn test_sign_n20_t16_ttag17() {
     sign(16, 20, 17, vec![0, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 18, 19])
+}
+
+#[test]
+fn test_double_sign() {
+    double_sign(2, 5, 5, vec![0, 1, 2, 3, 4])
 }
 
 #[test]
