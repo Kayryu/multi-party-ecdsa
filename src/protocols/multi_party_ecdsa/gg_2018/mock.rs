@@ -99,6 +99,9 @@ pub fn keygen_t_n_parties(t: u16, n: u16) -> (Vec<Keys>, Vec<SharedKeys>, Vec<GE
         .clone()
         .reconstruct(&index_vec[0..=t], &xi_vec);
     let sum_u_i = party_keys_vec.iter().fold(FE::zero(), |acc, x| acc + x.u_i);
+
+    // why equal?  sum_u_i is the sum of each party private key.
+    // x is calc by lagrange interpolation at zero.
     assert_eq!(x, sum_u_i);
 
     (
@@ -113,8 +116,12 @@ pub fn keygen_t_n_parties(t: u16, n: u16) -> (Vec<Keys>, Vec<SharedKeys>, Vec<GE
 pub fn sign(t: u16, n: u16, ttag: u16, s: Vec<usize>) {
     // full key gen emulation
     // party_keys_vec: party private key
-    // shared_keys_vec:
+    // shared_keys_vec: private key of vss
+    // _pk_vec : public key of vss
+    // y:  real public key
+    // vss_scheme: why single?
     let (party_keys_vec, shared_keys_vec, _pk_vec, y, vss_scheme) = keygen_t_n_parties(t, n);
+
 
     let private_vec = (0..shared_keys_vec.len())
         .map(|i| PartyPrivate::set_private(party_keys_vec[i].clone(), shared_keys_vec[i].clone()))
@@ -134,6 +141,7 @@ pub fn sign(t: u16, n: u16, ttag: u16, s: Vec<usize>) {
         .collect::<Vec<SignKeys>>();
 
     // each party computes [Ci,Di] = com(g^gamma_i) and broadcast the commitments
+    // a hash commitment scheme
     let (bc1_vec, decommit_vec1): (Vec<_>, Vec<_>) =
         sign_keys_vec.iter().map(|k| k.phase1_broadcast()).unzip();
 
@@ -164,7 +172,7 @@ pub fn sign(t: u16, n: u16, ttag: u16, s: Vec<usize>) {
             let ind = if j < i { j } else { j + 1 };
 
             let (m_b_gamma, beta_gamma, _) = MessageB::b(
-                &key.gamma_i,
+                &key.gamma_i,  // g_gamma_i has commitment
                 &party_keys_vec[s[ind]].ek,
                 m_a_vec[ind].clone(),
             );

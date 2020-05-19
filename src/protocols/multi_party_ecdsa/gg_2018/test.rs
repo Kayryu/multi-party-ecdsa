@@ -39,7 +39,7 @@ fn test_keygen_t2_n4() {
 
 #[test]
 fn test_sign_n5_t2_ttag4() {
-    sign(2, 5, 4, vec![0, 2, 3, 4])
+    sign(2, 5, 5, vec![0, 1, 2, 3, 4])
 }
 
 #[test]

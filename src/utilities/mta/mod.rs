@@ -59,6 +59,7 @@ impl MessageA {
 }
 
 impl MessageB {
+    //  return (encrypt , )
     pub fn b(b: &FE, alice_ek: &EncryptionKey, c_a: MessageA) -> (Self, FE, BigInt) {
         let beta_tag = BigInt::sample_below(&alice_ek.n);
         let beta_tag_fe: FE = ECScalar::from(&beta_tag);

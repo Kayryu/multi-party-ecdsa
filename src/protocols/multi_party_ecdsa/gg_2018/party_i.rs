@@ -390,6 +390,8 @@ impl SignKeys {
         index: usize,
         s: &[usize],
     ) -> Self {
+        //! so bad design.  why use VerifiableSS object, just pass the 't' in really.
+        //! it confuse.
         let li = vss_scheme.map_share_to_new_params(index, s);
         let w_i = li * private.x_i;
         let g: GE = ECPoint::generator();
